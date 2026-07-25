@@ -60,7 +60,21 @@ export function CameraScreen({ navigation, route }: Props) {
     }
   }, [permission, requestPermission]);
 
-  const errorMessage = (error: unknown) => error instanceof Error ? error.message : '未知错误，请稍后重试。';
+  const errorMessage = (error: unknown): string => {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    if (error && typeof error === 'object') {
+      const backendError = error as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown };
+      const parts = [
+        typeof backendError.message === 'string' ? backendError.message : '',
+        typeof backendError.code === 'string' ? `code: ${backendError.code}` : '',
+        typeof backendError.details === 'string' && backendError.details ? backendError.details : '',
+        typeof backendError.hint === 'string' && backendError.hint ? backendError.hint : '',
+      ].filter(Boolean);
+      if (parts.length) return parts.join(' | ');
+    }
+    return '未知错误，请稍后重试。';
+  };
 
   const saveToCloud = async (photo: PhotoRecord): Promise<boolean> => {
     if (!account?.id) {
