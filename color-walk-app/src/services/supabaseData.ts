@@ -94,7 +94,7 @@ export async function uploadCapturedPhoto(userId: string, photo: PhotoRecord): P
   const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
   const storage = client().storage.from(PHOTO_BUCKET);
   const upload = await storage.upload(path, bytes, { contentType: mimeType, upsert: false });
-  if (upload.error) throw upload.error;
+  if (upload.error) throw new Error(`云端照片上传失败：${upload.error.message}`);
 
   const { data, error } = await client().from('photos').insert({
     user_id: userId,
@@ -111,7 +111,7 @@ export async function uploadCapturedPhoto(userId: string, photo: PhotoRecord): P
   }).select('*').single();
   if (error) {
     await storage.remove([path]);
-    throw error;
+    throw new Error(`照片记录保存失败：${error.message}`);
   }
   return photoFromRow(data as DbRow);
 }

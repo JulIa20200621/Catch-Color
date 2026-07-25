@@ -44,6 +44,11 @@ export function CameraScreen({ navigation, route }: Props) {
   const account = useAppStore((state) => state.account);
   const target = dailyTarget ?? createFallbackDailyTarget();
 
+  const getLocationWithoutBlocking = async () => Promise.race([
+    getOptionalLocation(),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
+  ]);
+
   useEffect(() => {
     if (Platform.OS !== 'web' && !nativePermissionRequested.current && permission && !permission.granted && permission.canAskAgain) {
       nativePermissionRequested.current = true;
@@ -57,10 +62,8 @@ export function CameraScreen({ navigation, route }: Props) {
     setPreviewUri(imageUri);
     setAnalyzing(true);
     try {
-      const [analysis, location] = await Promise.all([
-        analyzeLocalPhoto(imageUri, target.targetCategory),
-        getOptionalLocation(),
-      ]);
+      const analysis = await analyzeLocalPhoto(imageUri, target.targetCategory);
+      const location = await getLocationWithoutBlocking();
 
       if (source === 'camera') await savePhotoToDevice(imageUri);
 
@@ -77,11 +80,16 @@ export function CameraScreen({ navigation, route }: Props) {
         storageType: 'local',
       };
       if (!account?.id) throw new Error('登录状态失效，请重新登录后再拍摄。');
-      const syncedPhoto = await uploadCapturedPhoto(account.id, photo);
+      let syncedPhoto: PhotoRecord;
+      try {
+        syncedPhoto = await uploadCapturedPhoto(account.id, photo);
+      } catch (error) {
+        throw new Error(`颜色检测已完成，但云端保存失败。${error instanceof Error ? error.message : '请稍后重试。'}`);
+      }
       addPhoto(syncedPhoto);
       navigation.replace('Result', { photoId: syncedPhoto.id });
     } catch (error) {
-      Alert.alert('分析失败', error instanceof Error ? error.message : '请稍后再试');
+      Alert.alert('拍摄未完成', error instanceof Error ? error.message : '请稍后再试');
     } finally {
       setAnalyzing(false);
     }
