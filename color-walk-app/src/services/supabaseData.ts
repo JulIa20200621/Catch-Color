@@ -86,7 +86,7 @@ export async function ensureProfile(account: LocalAccount): Promise<void> {
     public_id: publicId,
     is_discoverable: true,
   }, { onConflict: 'id' });
-  if (error) throw error;
+  if (error) throw new Error(`profiles 写入失败：${backendErrorMessage(error)}`);
 }
 
 export async function loadOwnPhotos(userId: string): Promise<PhotoRecord[]> {
@@ -96,7 +96,14 @@ export async function loadOwnPhotos(userId: string): Promise<PhotoRecord[]> {
   return Promise.all((data as DbRow[]).map(photoFromRow));
 }
 
-export async function uploadCapturedPhoto(userId: string, photo: PhotoRecord): Promise<PhotoRecord> {
+export type PhotoUploadStage = '正在读取拍摄图片' | '正在上传到 Storage' | '正在写入 photos 记录';
+
+export async function uploadCapturedPhoto(
+  userId: string,
+  photo: PhotoRecord,
+  onStage?: (stage: PhotoUploadStage) => void,
+): Promise<PhotoRecord> {
+  onStage?.('正在读取拍摄图片');
   let response: Response;
   try {
     response = await fetch(photo.imageUri);
@@ -110,9 +117,11 @@ export async function uploadCapturedPhoto(userId: string, photo: PhotoRecord): P
   const extension = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
   const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
   const storage = client().storage.from(PHOTO_BUCKET);
+  onStage?.('正在上传到 Storage');
   const upload = await storage.upload(path, bytes, { contentType: mimeType, upsert: false });
   if (upload.error) throw new Error(`Storage 上传失败：${backendErrorMessage(upload.error)}`);
 
+  onStage?.('正在写入 photos 记录');
   const { data, error } = await client().from('photos').insert({
     user_id: userId,
     image_url: path,

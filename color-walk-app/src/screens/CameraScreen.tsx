@@ -40,6 +40,7 @@ export function CameraScreen({ navigation, route }: Props) {
   const [processingStage, setProcessingStage] = useState<'analyzing' | 'uploading' | null>(null);
   const [pendingPhoto, setPendingPhoto] = useState<PhotoRecord | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [cloudTrace, setCloudTrace] = useState<string[]>([]);
   const dailyTarget = useAppStore((state) => state.dailyTarget);
   const setDailyTarget = useAppStore((state) => state.setDailyTarget);
   const isAnalyzing = useAppStore((state) => state.isAnalyzing);
@@ -76,22 +77,33 @@ export function CameraScreen({ navigation, route }: Props) {
     return '未知错误，请稍后重试。';
   };
 
+  const appendCloudTrace = (message: string) => {
+    setCloudTrace((items) => [...items, message].slice(-7));
+  };
+
   const saveToCloud = async (photo: PhotoRecord): Promise<boolean> => {
     if (!account?.id) {
+      setCloudTrace(['失败：没有可用的登录用户 ID']);
       setCaptureError('登录状态已失效，请重新登录后再保存照片。');
       return false;
     }
 
     setProcessingStage('uploading');
+    setCloudTrace(['已找到登录用户，开始云端同步', '正在创建或更新 profiles 资料']);
     try {
       await ensureProfile(account);
-      const syncedPhoto = await uploadCapturedPhoto(account.id, photo);
+      appendCloudTrace('profiles 资料已确认');
+      const syncedPhoto = await uploadCapturedPhoto(account.id, photo, appendCloudTrace);
+      appendCloudTrace('云端保存成功');
       setPendingPhoto(null);
       addPhoto(syncedPhoto);
       navigation.replace('Result', { photoId: syncedPhoto.id });
       return true;
     } catch (error) {
-      setCaptureError(`颜色已识别，但照片尚未保存到云端。\n\n${errorMessage(error)}`);
+      const message = errorMessage(error);
+      console.error('[Color Walk] cloud photo save failed', error);
+      appendCloudTrace(`失败：${message}`);
+      setCaptureError(`颜色已识别，但照片尚未保存到云端。\n\n${message}`);
       return false;
     } finally {
       setProcessingStage(null);
@@ -112,6 +124,7 @@ export function CameraScreen({ navigation, route }: Props) {
     setPreviewUri(imageUri);
     setCaptureError(null);
     setPendingPhoto(null);
+    setCloudTrace([]);
     setAnalyzing(true);
     setProcessingStage('analyzing');
     try {
@@ -135,7 +148,10 @@ export function CameraScreen({ navigation, route }: Props) {
       setPendingPhoto(photo);
       await saveToCloud(photo);
     } catch (error) {
-      setCaptureError(`无法完成颜色识别。\n\n${errorMessage(error)}`);
+      const message = errorMessage(error);
+      console.error('[Color Walk] local photo analysis failed', error);
+      setCloudTrace([`颜色识别失败：${message}`]);
+      setCaptureError(`无法完成颜色识别。\n\n${message}`);
     } finally {
       setProcessingStage(null);
       setAnalyzing(false);
@@ -321,6 +337,14 @@ export function CameraScreen({ navigation, route }: Props) {
             </View>
           ) : null}
           <Text selectable style={styles.captureErrorText}>{captureError}</Text>
+          {cloudTrace.length ? (
+            <View style={styles.tracePanel}>
+              <Text style={styles.traceTitle}>云端诊断轨迹</Text>
+              {cloudTrace.map((item, index) => (
+                <Text key={`${item}-${index}`} selectable style={styles.traceText}>{`${index + 1}. ${item}`}</Text>
+              ))}
+            </View>
+          ) : null}
           {pendingPhoto ? (
             <Pressable style={styles.retryButton} onPress={() => void retryCloudSave()}>
               <Text style={styles.retryButtonText}>重试云端保存</Text>
@@ -480,6 +504,9 @@ const styles = StyleSheet.create({
   captureErrorAnalysis: { color: colors.ink, fontSize: 14, fontWeight: '700' },
   captureDistributionTitle: { color: colors.inkMuted, fontSize: 12, fontWeight: '800' },
   captureErrorText: { color: colors.inkMuted, fontSize: 13, lineHeight: 19 },
+  tracePanel: { gap: 4, padding: 10, borderRadius: 6, backgroundColor: '#F4F1E8' },
+  traceTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  traceText: { color: colors.inkMuted, fontSize: 11, lineHeight: 16 },
   retryButton: {
     minHeight: 44,
     borderRadius: 8,
