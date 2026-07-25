@@ -124,7 +124,6 @@ export async function uploadCapturedPhoto(userId: string, photo: PhotoRecord): P
     longitude: photo.location?.longitude ?? null,
     visibility: 'private',
     source: photo.source,
-    success: photo.analysis.success,
   }).select('*').single();
   if (error) {
     await storage.remove([path]);
