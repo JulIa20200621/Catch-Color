@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { CameraView, useCameraPermissions, type CameraType } from 'expo-camera';
+import { CameraView, useCameraPermissions, type CameraCapturedPicture, type CameraType } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -32,6 +32,7 @@ export function CameraScreen({ navigation, route }: Props) {
   const [facing, setFacing] = useState<CameraType>(route.params?.initialFacing ?? 'back');
   const [torch, setTorch] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
   const [cameraAttempt, setCameraAttempt] = useState(0);
   const [webCameraRequested, setWebCameraRequested] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -84,11 +85,26 @@ export function CameraScreen({ navigation, route }: Props) {
   };
 
   const takePhoto = async () => {
+    if (!cameraReady || !cameraRef.current) {
+      Alert.alert('相机还在准备', '请等待预览稳定后再按一次快门。');
+      return;
+    }
     try {
-      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.75 });
-      if (photo?.uri) await processPhoto(photo.uri, 'camera');
-    } catch {
-      Alert.alert('拍摄失败', '相机暂时不可用，请尝试从相册选择。');
+      let photo: CameraCapturedPicture;
+      try {
+        photo = await cameraRef.current.takePictureAsync({ quality: 0.75 });
+      } catch (error) {
+        const isWebReadinessRace = Platform.OS === 'web'
+          && error instanceof Error
+          && /not ready|enough camera data|mediastream/i.test(error.message);
+        if (!isWebReadinessRace) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        photo = await cameraRef.current.takePictureAsync({ quality: 0.75 });
+      }
+      if (!photo?.uri) throw new Error('没能获取到当前相机画面。');
+      await processPhoto(photo.uri, 'camera');
+    } catch (error) {
+      Alert.alert('拍摄失败', error instanceof Error ? error.message : '相机暂时不可用，请尝试从相册选择。');
     }
   };
 
@@ -105,6 +121,7 @@ export function CameraScreen({ navigation, route }: Props) {
 
   const requestCameraAccess = async () => {
     setCameraError(null);
+    setCameraReady(false);
     const result = await requestPermission();
     if (result.granted) {
       setWebCameraRequested(true);
@@ -121,6 +138,7 @@ export function CameraScreen({ navigation, route }: Props) {
 
   const switchCamera = () => {
     setTorch(false);
+    setCameraReady(false);
     setFacing((value) => (value === 'back' ? 'front' : 'back'));
     setCameraAttempt((value) => value + 1);
   };
@@ -185,7 +203,11 @@ export function CameraScreen({ navigation, route }: Props) {
         style={styles.camera}
         facing={facing}
         enableTorch={torch}
-        onMountError={(event) => setCameraError(event.message || '设备没有可用的摄像头。')}
+        onCameraReady={() => setCameraReady(true)}
+        onMountError={(event) => {
+          setCameraReady(false);
+          setCameraError(event.message || '设备没有可用的摄像头。');
+        }}
       >
         <View style={styles.topOverlay}>
           <Pressable style={styles.iconButton} onPress={() => navigation.goBack()}>
@@ -215,8 +237,8 @@ export function CameraScreen({ navigation, route }: Props) {
           </Pressable>
           <Pressable
             accessibilityLabel="拍照"
-            disabled={isAnalyzing}
-            style={styles.shutterOuter}
+            disabled={isAnalyzing || !cameraReady}
+            style={[styles.shutterOuter, (!cameraReady || isAnalyzing) && styles.shutterDisabled]}
             onPress={() => void takePhoto()}
           >
             <View style={[styles.shutterInner, { backgroundColor: dailyTarget?.colorHex ?? colors.coral }]} />
@@ -306,6 +328,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  shutterDisabled: { opacity: 0.5 },
   shutterInner: { width: 60, height: 60, borderRadius: 30 },
   permissionPage: {
     flex: 1,
