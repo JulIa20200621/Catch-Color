@@ -5,7 +5,8 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../components/Screen';
-import { app2Colors } from '../data/app2Mock';
+import { createFallbackDailyTarget, createPersonalTarget } from '../data/palette';
+import { useAppStore } from '../store/useAppStore';
 import { colors } from '../theme/colors';
 import type { MainTabParamList, RootStackParamList } from '../types';
 
@@ -16,10 +17,16 @@ type ShootMode = 'single' | 'multi';
 // opens the real Expo camera so the original photo-analysis flow remains usable.
 export function HomeScreen({ navigation }: Props) {
   const [mode, setMode] = useState<ShootMode | null>(null);
-  const [targetIndex, setTargetIndex] = useState(0);
   const [flash, setFlash] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const color = app2Colors[targetIndex];
+  const dailyTarget = useAppStore((state) => state.dailyTarget);
+  const setDailyTarget = useAppStore((state) => state.setDailyTarget);
+  const target = dailyTarget ?? createFallbackDailyTarget();
+  const color = {
+    name: target.colorName,
+    hex: target.colorHex,
+    soft: `${target.colorHex}20`,
+  };
 
   return (
     <Screen>
@@ -28,7 +35,7 @@ export function HomeScreen({ navigation }: Props) {
           <View style={styles.colorInfo}>
             <View style={[styles.colorDot, { backgroundColor: color.hex }]} />
             <Text style={styles.topText}>今天的颜色：{mode === 'single' ? color.name : '任意'}</Text>
-            <Pressable style={styles.changeColor} onPress={() => setTargetIndex((index) => (index + 1) % app2Colors.length)}><Ionicons name="refresh" size={12} color={colors.primary} /><Text style={styles.changeText}>换一色</Text></Pressable>
+            <Pressable style={styles.changeColor} onPress={() => setDailyTarget(createPersonalTarget(target))}><Ionicons name="refresh" size={12} color={colors.primary} /><Text style={styles.changeText}>换一色</Text></Pressable>
           </View>
           <Text style={styles.counter}>{mode === 'multi' ? '已收集：0 色' : '已拍：0 张'}</Text>
         </View>

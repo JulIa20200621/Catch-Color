@@ -15,9 +15,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { DistributionBars } from '../components/DistributionBars';
 import { getOptionalLocation, savePhotoToDevice } from '../services/device';
 import { persistImageUri } from '../services/imagePersistence';
-import { uploadCapturedPhoto } from '../services/supabaseData';
+import { ensureProfile, uploadCapturedPhoto } from '../services/supabaseData';
 import { analyzeLocalPhoto } from '../services/photoAnalysis';
 import { createFallbackDailyTarget } from '../data/palette';
 import { useAppStore } from '../store/useAppStore';
@@ -69,6 +70,7 @@ export function CameraScreen({ navigation, route }: Props) {
 
     setProcessingStage('uploading');
     try {
+      await ensureProfile(account);
       const syncedPhoto = await uploadCapturedPhoto(account.id, photo);
       setPendingPhoto(null);
       addPhoto(syncedPhoto);
@@ -296,9 +298,13 @@ export function CameraScreen({ navigation, route }: Props) {
         <View style={styles.captureErrorPanel}>
           <Text style={styles.captureErrorTitle}>照片尚未保存到云端</Text>
           {pendingPhoto ? (
-            <Text style={styles.captureErrorAnalysis}>
-              颜色识别已完成：目标颜色占比 {Math.round(pendingPhoto.analysis.targetRatio * 100)}%
-            </Text>
+            <View style={styles.captureAnalysis}>
+              <Text style={styles.captureErrorAnalysis}>
+                颜色识别已完成：目标颜色占比 {Math.round(pendingPhoto.analysis.targetRatio * 100)}%
+              </Text>
+              <Text style={styles.captureDistributionTitle}>检测到的颜色分布</Text>
+              <DistributionBars distribution={pendingPhoto.analysis.distribution} />
+            </View>
           ) : null}
           <Text selectable style={styles.captureErrorText}>{captureError}</Text>
           {pendingPhoto ? (
@@ -456,7 +462,9 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   captureErrorTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' },
+  captureAnalysis: { gap: 8 },
   captureErrorAnalysis: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  captureDistributionTitle: { color: colors.inkMuted, fontSize: 12, fontWeight: '800' },
   captureErrorText: { color: colors.inkMuted, fontSize: 13, lineHeight: 19 },
   retryButton: {
     minHeight: 44,
