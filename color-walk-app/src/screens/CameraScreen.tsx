@@ -32,7 +32,6 @@ export function CameraScreen({ navigation, route }: Props) {
   const [facing, setFacing] = useState<CameraType>(route.params?.initialFacing ?? 'back');
   const [torch, setTorch] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [cameraReady, setCameraReady] = useState(false);
   const [cameraAttempt, setCameraAttempt] = useState(0);
   const [webCameraRequested, setWebCameraRequested] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -85,23 +84,27 @@ export function CameraScreen({ navigation, route }: Props) {
   };
 
   const takePhoto = async () => {
-    if (!cameraReady || !cameraRef.current) {
+    if (!cameraRef.current) {
       Alert.alert('相机还在准备', '请等待预览稳定后再按一次快门。');
       return;
     }
     try {
-      let photo: CameraCapturedPicture;
-      try {
-        photo = await cameraRef.current.takePictureAsync({ quality: 0.75 });
-      } catch (error) {
-        const isWebReadinessRace = Platform.OS === 'web'
-          && error instanceof Error
-          && /not ready|enough camera data|mediastream/i.test(error.message);
-        if (!isWebReadinessRace) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        photo = await cameraRef.current.takePictureAsync({ quality: 0.75 });
+      let photo: CameraCapturedPicture | undefined;
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          photo = await cameraRef.current.takePictureAsync({ quality: 0.75 });
+          break;
+        } catch (error) {
+          lastError = error;
+          const isWebReadinessRace = Platform.OS === 'web'
+            && error instanceof Error
+            && /not ready|enough camera data|mediastream/i.test(error.message);
+          if (!isWebReadinessRace || attempt === 2) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
       }
-      if (!photo?.uri) throw new Error('没能获取到当前相机画面。');
+      if (!photo?.uri) throw lastError instanceof Error ? lastError : new Error('没能获取到当前相机画面。');
       await processPhoto(photo.uri, 'camera');
     } catch (error) {
       Alert.alert('拍摄失败', error instanceof Error ? error.message : '相机暂时不可用，请尝试从相册选择。');
@@ -121,7 +124,6 @@ export function CameraScreen({ navigation, route }: Props) {
 
   const requestCameraAccess = async () => {
     setCameraError(null);
-    setCameraReady(false);
     const result = await requestPermission();
     if (result.granted) {
       setWebCameraRequested(true);
@@ -138,7 +140,6 @@ export function CameraScreen({ navigation, route }: Props) {
 
   const switchCamera = () => {
     setTorch(false);
-    setCameraReady(false);
     setFacing((value) => (value === 'back' ? 'front' : 'back'));
     setCameraAttempt((value) => value + 1);
   };
@@ -203,9 +204,7 @@ export function CameraScreen({ navigation, route }: Props) {
         style={styles.camera}
         facing={facing}
         enableTorch={torch}
-        onCameraReady={() => setCameraReady(true)}
         onMountError={(event) => {
-          setCameraReady(false);
           setCameraError(event.message || '设备没有可用的摄像头。');
         }}
       >
@@ -237,8 +236,8 @@ export function CameraScreen({ navigation, route }: Props) {
           </Pressable>
           <Pressable
             accessibilityLabel="拍照"
-            disabled={isAnalyzing || !cameraReady}
-            style={[styles.shutterOuter, (!cameraReady || isAnalyzing) && styles.shutterDisabled]}
+            disabled={isAnalyzing}
+            style={[styles.shutterOuter, isAnalyzing && styles.shutterDisabled]}
             onPress={() => void takePhoto()}
           >
             <View style={[styles.shutterInner, { backgroundColor: dailyTarget?.colorHex ?? colors.coral }]} />
