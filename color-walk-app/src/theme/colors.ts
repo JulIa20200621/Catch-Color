@@ -1,0 +1,21 @@
+export const colors = {
+  // Values are translated directly from app-2/src/index.css.
+  ink: '#3B3B3E',
+  inkMuted: '#9D9DA2',
+  paper: '#F8F8F0',
+  surface: '#FDFBF2',
+  surfaceStrong: '#F0E8D8',
+  line: '#E8E2CE',
+  lineLight: '#E8E2CE',
+  primary: '#7C81D8',
+  coral: '#E59266',
+  coralDark: '#725D42',
+  lime: '#D8EAD9',
+  blue: '#B2CCE2',
+  yellow: '#EDDFA8',
+  pink: '#EBC2D3',
+  success: '#4A7A4A',
+  danger: '#D65F5F',
+  white: '#FFFFFF',
+  black: '#000000',
+} as const;

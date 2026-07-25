@@ -1,0 +1,43 @@
+# Secrets and machine-specific configuration
+.env
+.env.*.local
+!.env.example
+
+# Dependencies and package manager caches
+**/node_modules/
+.npm/
+.yarn/
+.pnpm-store/
+
+# Expo / React Native generated files
+**/.expo/
+**/.expo-shared/
+**/.expo-check-android/
+**/web-build/
+**/dist/
+**/dist-android*/
+**/android/
+**/ios/
+
+# Release packages and native signing material
+*.apk
+*.aab
+*.ipa
+*-dist.zip
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Local AI assistant settings
+.claude/
+.agents/
+.codex/
+
+# Logs, caches and operating-system files
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+__MACOSX/
