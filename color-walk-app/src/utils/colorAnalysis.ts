@@ -62,9 +62,11 @@ export function analyzePixels(
   pixels: ArrayLike<number>,
   targetCategory: ColorCategory,
 ): ColorAnalysisResult {
-  const counts: Partial<Record<ColorCategory, number>> = {};
+  const strongCounts: Partial<Record<ColorCategory, number>> = {};
+  const fallbackCounts: Partial<Record<ColorCategory, number>> = {};
   let opaquePixels = 0;
-  let coloredPixels = 0;
+  let strongColorPixels = 0;
+  let fallbackColorPixels = 0;
   let brightnessSum = 0;
 
   for (let index = 0; index < pixels.length; index += 4) {
@@ -79,19 +81,30 @@ export function analyzePixels(
     opaquePixels += 1;
     brightnessSum += lightness;
 
-    if (saturation < 0.15 || lightness < 0.08 || lightness > 0.92) {
+    if (lightness < 0.08 || lightness > 0.92) {
       continue;
     }
 
     const category = classifyHue(hue);
     if (!category) continue;
-    counts[category] = (counts[category] ?? 0) + 1;
-    coloredPixels += 1;
+
+    if (saturation >= 0.15) {
+      strongCounts[category] = (strongCounts[category] ?? 0) + 1;
+      strongColorPixels += 1;
+    } else if (saturation >= 0.05) {
+      // Mobile Safari may desaturate a frame captured from a live camera.
+      // Use these softer tones only when the normal pass finds almost nothing.
+      fallbackCounts[category] = (fallbackCounts[category] ?? 0) + 1;
+      fallbackColorPixels += 1;
+    }
   }
 
   const imagePixelCount = Math.max(1, opaquePixels);
-  const colorPixelCount = Math.max(1, coloredPixels);
   const brightness = brightnessSum / imagePixelCount;
+  const useFallback = strongColorPixels < imagePixelCount * 0.01 && fallbackColorPixels > 0;
+  const counts = useFallback ? fallbackCounts : strongCounts;
+  const coloredPixels = useFallback ? fallbackColorPixels : strongColorPixels;
+  const colorPixelCount = Math.max(1, coloredPixels);
   const distribution: ColorDistribution = {};
 
   if (coloredPixels > 0) {
