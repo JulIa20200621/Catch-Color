@@ -36,6 +36,9 @@ export function CameraScreen({ navigation, route }: Props) {
   const [cameraAttempt, setCameraAttempt] = useState(0);
   const [webCameraRequested, setWebCameraRequested] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [processingStage, setProcessingStage] = useState<'analyzing' | 'uploading' | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<PhotoRecord | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const dailyTarget = useAppStore((state) => state.dailyTarget);
   const setDailyTarget = useAppStore((state) => state.setDailyTarget);
   const isAnalyzing = useAppStore((state) => state.isAnalyzing);
@@ -56,11 +59,45 @@ export function CameraScreen({ navigation, route }: Props) {
     }
   }, [permission, requestPermission]);
 
+  const errorMessage = (error: unknown) => error instanceof Error ? error.message : '未知错误，请稍后重试。';
+
+  const saveToCloud = async (photo: PhotoRecord): Promise<boolean> => {
+    if (!account?.id) {
+      setCaptureError('登录状态已失效，请重新登录后再保存照片。');
+      return false;
+    }
+
+    setProcessingStage('uploading');
+    try {
+      const syncedPhoto = await uploadCapturedPhoto(account.id, photo);
+      setPendingPhoto(null);
+      addPhoto(syncedPhoto);
+      navigation.replace('Result', { photoId: syncedPhoto.id });
+      return true;
+    } catch (error) {
+      setCaptureError(`颜色已识别，但照片尚未保存到云端。\n\n${errorMessage(error)}`);
+      return false;
+    } finally {
+      setProcessingStage(null);
+    }
+  };
+
+  const retryCloudSave = async () => {
+    if (!pendingPhoto || isAnalyzing) return;
+    setCaptureError(null);
+    setAnalyzing(true);
+    await saveToCloud(pendingPhoto);
+    setAnalyzing(false);
+  };
+
   const processPhoto = async (imageUri: string, source: PhotoRecord['source']) => {
     if (isAnalyzing) return;
     if (!dailyTarget) setDailyTarget(target);
     setPreviewUri(imageUri);
+    setCaptureError(null);
+    setPendingPhoto(null);
     setAnalyzing(true);
+    setProcessingStage('analyzing');
     try {
       const analysis = await analyzeLocalPhoto(imageUri, target.targetCategory);
       const location = await getLocationWithoutBlocking();
@@ -79,18 +116,12 @@ export function CameraScreen({ navigation, route }: Props) {
         analysisMode: 'local',
         storageType: 'local',
       };
-      if (!account?.id) throw new Error('登录状态失效，请重新登录后再拍摄。');
-      let syncedPhoto: PhotoRecord;
-      try {
-        syncedPhoto = await uploadCapturedPhoto(account.id, photo);
-      } catch (error) {
-        throw new Error(`颜色检测已完成，但云端保存失败。${error instanceof Error ? error.message : '请稍后重试。'}`);
-      }
-      addPhoto(syncedPhoto);
-      navigation.replace('Result', { photoId: syncedPhoto.id });
+      setPendingPhoto(photo);
+      await saveToCloud(photo);
     } catch (error) {
-      Alert.alert('拍摄未完成', error instanceof Error ? error.message : '请稍后再试');
+      setCaptureError(`无法完成颜色识别。\n\n${errorMessage(error)}`);
     } finally {
+      setProcessingStage(null);
       setAnalyzing(false);
     }
   };
@@ -261,13 +292,39 @@ export function CameraScreen({ navigation, route }: Props) {
         </View>
       </CameraView>
 
+      {captureError ? (
+        <View style={styles.captureErrorPanel}>
+          <Text style={styles.captureErrorTitle}>照片尚未保存到云端</Text>
+          {pendingPhoto ? (
+            <Text style={styles.captureErrorAnalysis}>
+              颜色识别已完成：目标颜色占比 {Math.round(pendingPhoto.analysis.targetRatio * 100)}%
+            </Text>
+          ) : null}
+          <Text selectable style={styles.captureErrorText}>{captureError}</Text>
+          {pendingPhoto ? (
+            <Pressable style={styles.retryButton} onPress={() => void retryCloudSave()}>
+              <Text style={styles.retryButtonText}>重试云端保存</Text>
+            </Pressable>
+          ) : null}
+          <Pressable style={styles.dismissErrorButton} onPress={() => setCaptureError(null)}>
+            <Text style={styles.dismissErrorText}>关闭</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {isAnalyzing ? (
         <View style={styles.processing}>
           <View style={styles.polaroid}>
             {previewUri ? <Image source={{ uri: previewUri }} style={styles.polaroidImage} /> : null}
             <ActivityIndicator color={colors.coral} size="large" />
-            <Text style={styles.processingTitle}>冲洗相纸中</Text>
-            <Text style={styles.processingText}>正在读取照片像素与位置...</Text>
+            <Text style={styles.processingTitle}>
+              {processingStage === 'uploading' ? '正在保存到云端' : '正在识别颜色'}
+            </Text>
+            <Text style={styles.processingText}>
+              {processingStage === 'uploading'
+                ? '照片和识别结果将同步到你的云端相册'
+                : '正在读取照片像素和颜色分布'}
+            </Text>
           </View>
         </View>
       ) : null}
@@ -386,4 +443,30 @@ const styles = StyleSheet.create({
   polaroidImage: { width: '100%', aspectRatio: 1, backgroundColor: colors.line },
   processingTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
   processingText: { color: colors.inkMuted, textAlign: 'center' },
+  captureErrorPanel: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    bottom: 24,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: 18,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  captureErrorTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' },
+  captureErrorAnalysis: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  captureErrorText: { color: colors.inkMuted, fontSize: 13, lineHeight: 19 },
+  retryButton: {
+    minHeight: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.coral,
+    paddingHorizontal: 16,
+  },
+  retryButtonText: { color: colors.surface, fontWeight: '900' },
+  dismissErrorButton: { minHeight: 32, alignItems: 'center', justifyContent: 'center' },
+  dismissErrorText: { color: colors.inkMuted, fontWeight: '700' },
 });

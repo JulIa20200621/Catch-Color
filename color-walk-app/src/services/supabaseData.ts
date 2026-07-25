@@ -17,6 +17,16 @@ const categoryFallback = COLOR_OPTIONS[0];
 
 type DbRow = Record<string, unknown>;
 
+function backendErrorMessage(error: { message?: unknown; code?: unknown; details?: unknown; hint?: unknown }): string {
+  const parts = [
+    typeof error.message === 'string' ? error.message : '未知后端错误',
+    typeof error.code === 'string' ? `code: ${error.code}` : '',
+    typeof error.details === 'string' && error.details ? error.details : '',
+    typeof error.hint === 'string' && error.hint ? error.hint : '',
+  ].filter(Boolean);
+  return parts.join(' | ');
+}
+
 function client() {
   if (!supabase) throw new Error('Supabase 未配置');
   return supabase;
@@ -87,14 +97,21 @@ export async function loadOwnPhotos(userId: string): Promise<PhotoRecord[]> {
 }
 
 export async function uploadCapturedPhoto(userId: string, photo: PhotoRecord): Promise<PhotoRecord> {
-  const response = await fetch(photo.imageUri);
+  let response: Response;
+  try {
+    response = await fetch(photo.imageUri);
+  } catch (error) {
+    throw new Error(`无法读取刚拍摄的图片：${error instanceof Error ? error.message : '浏览器未返回图片数据。'}`);
+  }
+  if (!response.ok) throw new Error(`无法读取刚拍摄的图片（HTTP ${response.status}）。`);
   const bytes = await response.arrayBuffer();
+  if (!bytes.byteLength) throw new Error('刚拍摄的图片为空，无法上传。');
   const mimeType = response.headers.get('content-type') || 'image/jpeg';
   const extension = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
   const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
   const storage = client().storage.from(PHOTO_BUCKET);
   const upload = await storage.upload(path, bytes, { contentType: mimeType, upsert: false });
-  if (upload.error) throw new Error(`云端照片上传失败：${upload.error.message}`);
+  if (upload.error) throw new Error(`Storage 上传失败：${backendErrorMessage(upload.error)}`);
 
   const { data, error } = await client().from('photos').insert({
     user_id: userId,
@@ -111,7 +128,7 @@ export async function uploadCapturedPhoto(userId: string, photo: PhotoRecord): P
   }).select('*').single();
   if (error) {
     await storage.remove([path]);
-    throw new Error(`照片记录保存失败：${error.message}`);
+    throw new Error(`photos 表写入失败：${backendErrorMessage(error)}`);
   }
   return photoFromRow(data as DbRow);
 }
