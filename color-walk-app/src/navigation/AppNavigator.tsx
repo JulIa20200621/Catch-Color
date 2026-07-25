@@ -18,6 +18,9 @@ import { LoginScreen } from '../screens/LoginScreen';
 import { useAppStore } from '../store/useAppStore';
 import { signInOrRegister, supabase } from '../services/supabase';
 import { ensureProfile, loadMoodRecords, loadOwnPhotos } from '../services/supabaseData';
+import { httpBackend } from '../services/httpBackend';
+import { createFallbackDailyTarget } from '../data/palette';
+import { toLocalDateString } from '../utils/date';
 import type { MainTabParamList, RootStackParamList } from '../types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -75,6 +78,8 @@ export function AppNavigator() {
   const logout = useAppStore((state) => state.logout);
   const setPhotos = useAppStore((state) => state.setPhotos);
   const setMoods = useAppStore((state) => state.setMoods);
+  const dailyTarget = useAppStore((state) => state.dailyTarget);
+  const setDailyTarget = useAppStore((state) => state.setDailyTarget);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -105,6 +110,20 @@ export function AppNavigator() {
     })();
     return () => { active = false; };
   }, [account, setMoods, setPhotos]);
+
+  useEffect(() => {
+    if (!account?.id) return;
+    const today = toLocalDateString();
+    if (dailyTarget?.date === today) return;
+    let active = true;
+    void httpBackend.getDailyTarget(today)
+      .then((target) => { if (active) setDailyTarget(target); })
+      .catch((error) => {
+        console.warn('Daily target load failed; using fallback target', error);
+        if (active) setDailyTarget(createFallbackDailyTarget(today));
+      });
+    return () => { active = false; };
+  }, [account?.id, dailyTarget?.date, setDailyTarget]);
 
   const authenticate = async (email: string, password: string, register: boolean) => {
     const data = await signInOrRegister(email, password, register);

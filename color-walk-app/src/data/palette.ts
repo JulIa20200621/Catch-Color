@@ -1,4 +1,5 @@
 import type { ColorCategory, DailyTarget } from '../types';
+import { toLocalDateString } from '../utils/date';
 
 export const COLOR_OPTIONS: ReadonlyArray<{
   colorHex: string;
@@ -27,5 +28,18 @@ export function createPersonalTarget(current: DailyTarget): DailyTarget {
     date: current.date,
     ...option,
     source: 'personal',
+  };
+}
+
+// Keeps the camera usable while the daily-target request is loading or the
+// backend has not created today's row yet. The target is deterministic by day.
+export function createFallbackDailyTarget(date = toLocalDateString()): DailyTarget {
+  const dayNumber = Number(date.replaceAll('-', '')) || 0;
+  const option = COLOR_OPTIONS[dayNumber % COLOR_OPTIONS.length];
+  return {
+    id: `fallback-${date}-${option.targetCategory}`,
+    date,
+    ...option,
+    source: 'global',
   };
 }

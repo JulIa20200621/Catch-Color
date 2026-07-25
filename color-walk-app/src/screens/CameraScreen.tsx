@@ -19,6 +19,7 @@ import { getOptionalLocation, savePhotoToDevice } from '../services/device';
 import { persistImageUri } from '../services/imagePersistence';
 import { uploadCapturedPhoto } from '../services/supabaseData';
 import { analyzeLocalPhoto } from '../services/photoAnalysis';
+import { createFallbackDailyTarget } from '../data/palette';
 import { useAppStore } from '../store/useAppStore';
 import { colors } from '../theme/colors';
 import type { PhotoRecord, RootStackParamList } from '../types';
@@ -36,10 +37,12 @@ export function CameraScreen({ navigation, route }: Props) {
   const [webCameraRequested, setWebCameraRequested] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const dailyTarget = useAppStore((state) => state.dailyTarget);
+  const setDailyTarget = useAppStore((state) => state.setDailyTarget);
   const isAnalyzing = useAppStore((state) => state.isAnalyzing);
   const setAnalyzing = useAppStore((state) => state.setAnalyzing);
   const addPhoto = useAppStore((state) => state.addPhoto);
   const account = useAppStore((state) => state.account);
+  const target = dailyTarget ?? createFallbackDailyTarget();
 
   useEffect(() => {
     if (Platform.OS !== 'web' && !nativePermissionRequested.current && permission && !permission.granted && permission.canAskAgain) {
@@ -49,12 +52,13 @@ export function CameraScreen({ navigation, route }: Props) {
   }, [permission, requestPermission]);
 
   const processPhoto = async (imageUri: string, source: PhotoRecord['source']) => {
-    if (!dailyTarget || isAnalyzing) return;
+    if (isAnalyzing) return;
+    if (!dailyTarget) setDailyTarget(target);
     setPreviewUri(imageUri);
     setAnalyzing(true);
     try {
       const [analysis, location] = await Promise.all([
-        analyzeLocalPhoto(imageUri, dailyTarget.targetCategory),
+        analyzeLocalPhoto(imageUri, target.targetCategory),
         getOptionalLocation(),
       ]);
 
@@ -67,7 +71,7 @@ export function CameraScreen({ navigation, route }: Props) {
         createdAt: new Date().toISOString(),
         source,
         location,
-        target: dailyTarget,
+        target,
         analysis,
         analysisMode: 'local',
         storageType: 'local',
@@ -214,9 +218,9 @@ export function CameraScreen({ navigation, route }: Props) {
           </Pressable>
           <View style={styles.targetPill}>
             <View
-              style={[styles.targetDot, { backgroundColor: dailyTarget?.colorHex ?? colors.coral }]}
+              style={[styles.targetDot, { backgroundColor: target.colorHex }]}
             />
-            <Text style={styles.targetText}>{dailyTarget?.colorName ?? '今日颜色'}</Text>
+            <Text style={styles.targetText}>{target.colorName}</Text>
           </View>
           <Pressable style={styles.iconButton} onPress={() => setTorch((value) => !value)}>
             <Ionicons name={torch ? 'flash' : 'flash-off'} size={22} color={colors.ink} />
@@ -240,7 +244,7 @@ export function CameraScreen({ navigation, route }: Props) {
             style={[styles.shutterOuter, isAnalyzing && styles.shutterDisabled]}
             onPress={() => void takePhoto()}
           >
-            <View style={[styles.shutterInner, { backgroundColor: dailyTarget?.colorHex ?? colors.coral }]} />
+            <View style={[styles.shutterInner, { backgroundColor: target.colorHex }]} />
           </Pressable>
           <Pressable accessibilityLabel="切换前后摄像头" style={styles.switchControl} onPress={switchCamera}>
             <Ionicons name="camera-reverse-outline" size={25} color={colors.ink} />
