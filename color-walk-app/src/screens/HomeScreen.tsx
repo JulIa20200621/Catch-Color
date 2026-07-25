@@ -46,14 +46,14 @@ export function HomeScreen({ navigation }: Props) {
         </View>
 
         {mode === null ? (
-          <View style={styles.mask}>
-            <View style={styles.modeCard}>
+          <Pressable style={styles.mask} onPress={() => setMode(null)}>
+            <Pressable style={styles.modeCard} onPress={(event) => event.stopPropagation()}>
               <Text style={styles.modeTitle}>今天想怎么拍？</Text>
               <Text style={styles.modeText}>专注捕捉「{color.name}」，{`\n`}还是把 12 种颜色都收进口袋？</Text>
               <Pressable style={styles.defaultAction} onPress={() => setMode('single')}><Text style={styles.defaultActionText}>🎨 一个颜色拍多张</Text></Pressable>
               <Pressable style={styles.primaryAction} onPress={() => setMode('multi')}><Text style={styles.primaryActionText}>🧺 收集不同颜色</Text></Pressable>
-            </View>
-          </View>
+            </Pressable>
+          </Pressable>
         ) : null}
       </View>
     </Screen>

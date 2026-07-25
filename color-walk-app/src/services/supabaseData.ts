@@ -195,6 +195,46 @@ export async function toggleCommunityLike(userId: string, postId: string, liked:
   if (error) throw error;
 }
 
+export interface CommunityCommentRecord {
+  id: string;
+  nickname: string;
+  body: string;
+  createdAt: string;
+}
+
+export async function loadCommunityComments(postId: string): Promise<CommunityCommentRecord[]> {
+  const { data: rows, error } = await client().from('post_comments').select('id,author_id,body,created_at')
+    .eq('post_id', postId).eq('status', 'published').order('created_at', { ascending: true });
+  if (error) throw error;
+  const comments = rows as DbRow[];
+  const authorIds = comments.map((row) => stringValue(row, 'author_id')).filter(Boolean);
+  if (!authorIds.length) return [];
+  const { data: profiles, error: profileError } = await client().from('profiles').select('id,nickname').in('id', authorIds);
+  if (profileError) throw profileError;
+  const nicknameById = new Map((profiles as DbRow[]).map((row) => [stringValue(row, 'id'), stringValue(row, 'nickname', '色彩漫游者')]));
+  return comments.map((row) => ({
+    id: stringValue(row, 'id'),
+    nickname: nicknameById.get(stringValue(row, 'author_id')) ?? '色彩漫游者',
+    body: stringValue(row, 'body'),
+    createdAt: stringValue(row, 'created_at'),
+  }));
+}
+
+export async function createCommunityComment(userId: string, postId: string, body: string): Promise<void> {
+  const { error } = await client().from('post_comments').insert({
+    post_id: postId,
+    author_id: userId,
+    body,
+    status: 'published',
+  });
+  if (error) throw error;
+}
+
+export async function recordCommunityShare(userId: string, postId: string, channel: string): Promise<void> {
+  const { error } = await client().from('post_shares').insert({ post_id: postId, user_id: userId, channel });
+  if (error) throw error;
+}
+
 export async function loadFriends(userId: string): Promise<FriendRecord[]> {
   const { data, error } = await client().from('friendships').select('*')
     .or(`user_id.eq.${userId},friend_id.eq.${userId}`).in('status', ['pending', 'accepted']).order('created_at', { ascending: false });
@@ -223,7 +263,23 @@ export async function requestFriend(userId: string, publicId: string): Promise<v
   if (lookupError) throw lookupError;
   if (!profile) throw new Error('没有找到可添加的用户 ID。');
   if (profile.id === userId) throw new Error('不能添加自己为好友。');
+
+  const { data: existing, error: existingError } = await client().from('friendships')
+    .select('id,status,user_id,friend_id')
+    .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
+  if (existingError) throw existingError;
+  const relation = (existing as DbRow[]).find((row) =>
+    (stringValue(row, 'user_id') === userId && stringValue(row, 'friend_id') === profile.id)
+    || (stringValue(row, 'friend_id') === userId && stringValue(row, 'user_id') === profile.id),
+  );
+  if (relation) {
+    const status = stringValue(relation, 'status');
+    if (status === 'accepted') throw new Error('你们已经是好友了。');
+    if (status === 'pending') throw new Error('已有一条好友申请在等待处理。');
+  }
+
   const { error } = await client().from('friendships').insert({ user_id: userId, friend_id: profile.id, status: 'pending' });
+  if (error?.code === '23505') throw new Error('已有一条好友申请在等待处理。');
   if (error) throw error;
 }
 
