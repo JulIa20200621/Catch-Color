@@ -108,8 +108,14 @@ export function AppNavigator() {
 
   const authenticate = async (email: string, password: string, register: boolean) => {
     const data = await signInOrRegister(email, password, register);
-    if (!data.session || !data.user) throw new Error('注册成功，请先到邮箱确认后再登录。');
+    if (!data.user) throw new Error('未获取到账户信息，请稍后重试。');
+
+    // Supabase returns no session when Confirm email is enabled. That is a
+    // successful registration, not a failed login.
+    if (!data.session) return { needsEmailConfirmation: true };
+
     setAuthenticatedAccount({ id: data.user.id, phone: '', email: data.user.email ?? email, nickname: data.user.email?.split('@')[0] || '小鹿', registeredAt: new Date().toISOString() });
+    return { needsEmailConfirmation: false };
   };
 
   if (!ready) return null;

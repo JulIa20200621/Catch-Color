@@ -30,6 +30,7 @@ export function CameraScreen({ navigation }: Props) {
   const [facing, setFacing] = useState<CameraType>('back');
   const [torch, setTorch] = useState(false);
   const [cameraError, setCameraError] = useState(false);
+  const [webCameraRequested, setWebCameraRequested] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const dailyTarget = useAppStore((state) => state.dailyTarget);
   const isAnalyzing = useAppStore((state) => state.isAnalyzing);
@@ -91,6 +92,27 @@ export function CameraScreen({ navigation }: Props) {
       await processPhoto(result.assets[0].uri, 'library');
     }
   };
+
+  const requestWebCamera = async () => {
+    const result = await requestPermission();
+    if (result.granted) setWebCameraRequested(true);
+  };
+
+  if (Platform.OS === 'web' && (!webCameraRequested || !permission?.granted || cameraError)) {
+    return (
+      <View style={styles.permissionPage}>
+        <View style={styles.permissionIcon}>
+          <Ionicons name="camera-outline" size={34} color={colors.coral} />
+        </View>
+        <Text style={styles.permissionTitle}>在电脑上捕捉今日颜色</Text>
+        <Text style={styles.permissionText}>
+          开启摄像头后可以用电脑摄像头拍摄。如果浏览器没有摄像头、不支持或被拒绝权限，请选择本地图片继续完成分析。
+        </Text>
+        <PrimaryButton label="开启电脑摄像头" icon="camera" onPress={() => void requestWebCamera()} />
+        <PrimaryButton label="选择本地图片" icon="images-outline" variant="secondary" onPress={() => void choosePhoto()} />
+      </View>
+    );
+  }
 
   if (!permission) {
     return (

@@ -5,10 +5,11 @@ import { Screen } from '../components/Screen';
 import { IslandPrimaryButton } from '../components/IslandPrimaryButton';
 import { colors } from '../theme/colors';
 
-interface Props { onLogin: (email: string, password: string, register: boolean) => Promise<void> }
+interface Props {
+  onLogin: (email: string, password: string, register: boolean) => Promise<{ needsEmailConfirmation: boolean }>
+}
 
-// Direct native translation of app-2/pages/LoginPage.tsx. Authentication is
-// intentionally mock-only until the backend provides its auth contract.
+// Direct native translation of app-2/pages/LoginPage.tsx, backed by Supabase Email Auth.
 export function LoginScreen({ onLogin }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,7 +22,18 @@ export function LoginScreen({ onLogin }: Props) {
       return;
     }
     setSubmitting(true);
-    try { await onLogin(email.trim().toLowerCase(), password, register); } catch (error) { Alert.alert(register ? '注册未完成' : '登录失败', error instanceof Error ? error.message : '请稍后重试'); } finally { setSubmitting(false); }
+    try {
+      const result = await onLogin(email.trim().toLowerCase(), password, register);
+      if (register && result.needsEmailConfirmation) {
+        setPassword('');
+        setRegister(false);
+        Alert.alert('注册成功', '已向你的邮箱发送验证邮件。请完成验证后，回到此页面使用邮箱和密码登录。');
+      }
+    } catch (error) {
+      Alert.alert(register ? '注册失败' : '登录失败', error instanceof Error ? error.message : '请稍后重试');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -36,14 +48,14 @@ export function LoginScreen({ onLogin }: Props) {
           <TextInput value={email} keyboardType="email-address" autoCapitalize="none" placeholder="邮箱" placeholderTextColor="#B4A88E" style={styles.input} onChangeText={setEmail} />
           <View style={styles.codeRow}>
             <TextInput value={password} secureTextEntry placeholder="密码（至少 6 位）" placeholderTextColor="#B4A88E" style={[styles.input, styles.codeInput]} onChangeText={setPassword} />
-            <Pressable style={styles.codeButton} onPress={() => setRegister((value) => !value)}><Text style={styles.codeButtonText}>{register ? '切换登录' : '注册账户'}</Text></Pressable>
+            <Pressable accessibilityLabel={register ? '切换到登录' : '切换到注册'} style={styles.codeButton} onPress={() => setRegister((value) => !value)}><Text style={styles.codeButtonText}>{register ? '去登录' : '去注册'}</Text></Pressable>
           </View>
           <IslandPrimaryButton label={submitting ? '请稍候…' : register ? '注册账户' : '登录'} onPress={() => void submit()} />
         </View>
         <View style={styles.otherRow}><View style={styles.line} /><Text style={styles.otherText}>其他登录方式</Text><View style={styles.line} /></View>
         <Pressable accessibilityLabel="注册说明" style={styles.wechat} onPress={() => Alert.alert('邮箱注册', '当前 Supabase 已开启邮箱认证，注册后请到邮箱完成确认。')}><Ionicons name="mail" size={21} color="#FFFFFF" /></Pressable>
         <Text style={styles.wechatText}>邮箱认证登录</Text>
-        <Text style={styles.footer}>登录即代表同意《用户协议》和《隐私政策》{`\n`}当前为原型演示，任意输入即可进入</Text>
+        <Text style={styles.footer}>登录即代表同意《用户协议》和《隐私政策》{`\n`}请使用已注册的邮箱和密码登录</Text>
       </KeyboardAvoidingView>
     </Screen>
   );
