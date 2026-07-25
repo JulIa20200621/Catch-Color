@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -24,12 +25,14 @@ import type { PhotoRecord, RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Camera'>;
 
-export function CameraScreen({ navigation }: Props) {
+export function CameraScreen({ navigation, route }: Props) {
   const cameraRef = useRef<CameraView>(null);
+  const nativePermissionRequested = useRef(false);
   const [permission, requestPermission] = useCameraPermissions();
-  const [facing, setFacing] = useState<CameraType>('back');
+  const [facing, setFacing] = useState<CameraType>(route.params?.initialFacing ?? 'back');
   const [torch, setTorch] = useState(false);
-  const [cameraError, setCameraError] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraAttempt, setCameraAttempt] = useState(0);
   const [webCameraRequested, setWebCameraRequested] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const dailyTarget = useAppStore((state) => state.dailyTarget);
@@ -37,6 +40,13 @@ export function CameraScreen({ navigation }: Props) {
   const setAnalyzing = useAppStore((state) => state.setAnalyzing);
   const addPhoto = useAppStore((state) => state.addPhoto);
   const account = useAppStore((state) => state.account);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' && !nativePermissionRequested.current && permission && !permission.granted && permission.canAskAgain) {
+      nativePermissionRequested.current = true;
+      void requestPermission();
+    }
+  }, [permission, requestPermission]);
 
   const processPhoto = async (imageUri: string, source: PhotoRecord['source']) => {
     if (!dailyTarget || isAnalyzing) return;
@@ -93,9 +103,26 @@ export function CameraScreen({ navigation }: Props) {
     }
   };
 
-  const requestWebCamera = async () => {
+  const requestCameraAccess = async () => {
+    setCameraError(null);
     const result = await requestPermission();
-    if (result.granted) setWebCameraRequested(true);
+    if (result.granted) {
+      setWebCameraRequested(true);
+      setCameraAttempt((value) => value + 1);
+      return;
+    }
+    if (!result.canAskAgain && Platform.OS !== 'web') {
+      Alert.alert('摄像头权限已被拒绝', '请在系统设置中允许 Color Walk 访问摄像头。', [
+        { text: '取消', style: 'cancel' },
+        { text: '打开设置', onPress: () => void Linking.openSettings() },
+      ]);
+    }
+  };
+
+  const switchCamera = () => {
+    setTorch(false);
+    setFacing((value) => (value === 'back' ? 'front' : 'back'));
+    setCameraAttempt((value) => value + 1);
   };
 
   if (Platform.OS === 'web' && (!webCameraRequested || !permission?.granted || cameraError)) {
@@ -104,11 +131,11 @@ export function CameraScreen({ navigation }: Props) {
         <View style={styles.permissionIcon}>
           <Ionicons name="camera-outline" size={34} color={colors.coral} />
         </View>
-        <Text style={styles.permissionTitle}>在电脑上捕捉今日颜色</Text>
+        <Text style={styles.permissionTitle}>{cameraError ? '摄像头启动失败' : '在电脑上捕捉今日颜色'}</Text>
         <Text style={styles.permissionText}>
-          开启摄像头后可以用电脑摄像头拍摄。如果浏览器没有摄像头、不支持或被拒绝权限，请选择本地图片继续完成分析。
+          {cameraError ?? '开启摄像头后可以用电脑摄像头拍摄。如果浏览器没有摄像头、不支持或被拒绝权限，请选择本地图片继续完成分析。'}
         </Text>
-        <PrimaryButton label="开启电脑摄像头" icon="camera" onPress={() => void requestWebCamera()} />
+        <PrimaryButton label={cameraError ? '重试开启摄像头' : '开启电脑摄像头'} icon="camera" onPress={() => void requestCameraAccess()} />
         <PrimaryButton label="选择本地图片" icon="images-outline" variant="secondary" onPress={() => void choosePhoto()} />
       </View>
     );
@@ -129,16 +156,17 @@ export function CameraScreen({ navigation }: Props) {
           <Ionicons name="camera-outline" size={34} color={colors.coral} />
         </View>
         <Text style={styles.permissionTitle}>
-          {cameraError ? '当前浏览器无法启动相机' : '需要相机权限'}
+          {cameraError ? '相机无法启动' : '需要相机权限'}
         </Text>
         <Text style={styles.permissionText}>
           {Platform.OS === 'web'
             ? '你仍可以选择一张照片，完成整个颜色分析演示。'
             : '允许相机权限后才能捕捉今日颜色；定位权限可以拒绝，不会阻断拍摄。'}
         </Text>
-        {!permission.granted && !cameraError ? (
-          <PrimaryButton label="允许相机" icon="camera" onPress={() => void requestPermission()} />
+        {!permission.granted ? (
+          <PrimaryButton label={permission.canAskAgain ? '允许相机' : '打开系统设置'} icon="camera" onPress={() => void requestCameraAccess()} />
         ) : null}
+        {cameraError ? <PrimaryButton label="重试开启相机" icon="refresh" onPress={() => { setCameraError(null); setCameraAttempt((value) => value + 1); }} /> : null}
         <PrimaryButton
           label="从相册选择"
           icon="images-outline"
@@ -152,11 +180,12 @@ export function CameraScreen({ navigation }: Props) {
   return (
     <View style={styles.page}>
       <CameraView
+        key={`camera-${facing}-${cameraAttempt}`}
         ref={cameraRef}
         style={styles.camera}
         facing={facing}
         enableTorch={torch}
-        onMountError={() => setCameraError(true)}
+        onMountError={(event) => setCameraError(event.message || '设备没有可用的摄像头。')}
       >
         <View style={styles.topOverlay}>
           <Pressable style={styles.iconButton} onPress={() => navigation.goBack()}>
@@ -192,11 +221,9 @@ export function CameraScreen({ navigation }: Props) {
           >
             <View style={[styles.shutterInner, { backgroundColor: dailyTarget?.colorHex ?? colors.coral }]} />
           </Pressable>
-          <Pressable
-            style={styles.smallControl}
-            onPress={() => setFacing((value) => (value === 'back' ? 'front' : 'back'))}
-          >
+          <Pressable accessibilityLabel="切换前后摄像头" style={styles.switchControl} onPress={switchCamera}>
             <Ionicons name="camera-reverse-outline" size={25} color={colors.ink} />
+            <Text style={styles.switchText}>{facing === 'back' ? '后置' : '前置'}</Text>
           </Pressable>
         </View>
       </CameraView>
@@ -268,6 +295,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  switchControl: { minWidth: 70, height: 46, borderRadius: 23, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
+  switchText: { color: colors.ink, fontSize: 12, fontWeight: '700' },
   shutterOuter: {
     width: 76,
     height: 76,

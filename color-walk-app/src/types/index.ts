@@ -110,7 +110,7 @@ export interface LocalAccount {
 
 export type RootStackParamList = {
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
-  Camera: undefined;
+  Camera: { initialFacing?: 'front' | 'back' } | undefined;
   Result: { photoId: string };
   Footprint: undefined;
   Challenge: undefined;

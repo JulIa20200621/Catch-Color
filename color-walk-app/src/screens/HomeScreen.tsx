@@ -41,8 +41,8 @@ export function HomeScreen({ navigation }: Props) {
 
         <View style={styles.shutterRow}>
           <Pressable style={[styles.sideButton, { borderColor: color.hex, backgroundColor: flash ? color.hex : color.soft }]} onPress={() => setFlash((value) => !value)}><Ionicons name="flash-outline" size={18} color={flash ? colors.white : colors.ink} /></Pressable>
-          <Pressable accessibilityLabel="拍摄" style={[styles.shutter, { borderColor: color.hex }]} onPress={() => navigation.navigate('Camera')}><View style={[styles.shutterInner, { backgroundColor: color.hex }]} /></Pressable>
-          <Pressable style={[styles.sideButton, { borderColor: color.hex, backgroundColor: color.soft }]} onPress={() => navigation.navigate('Camera')}><Ionicons name="camera-reverse-outline" size={19} color={colors.ink} /></Pressable>
+          <Pressable accessibilityLabel="使用后置摄像头拍摄" style={[styles.shutter, { borderColor: color.hex }]} onPress={() => navigation.navigate('Camera', { initialFacing: 'back' })}><View style={[styles.shutterInner, { backgroundColor: color.hex }]} /></Pressable>
+          <Pressable accessibilityLabel="使用前置摄像头拍摄" style={[styles.sideButton, { borderColor: color.hex, backgroundColor: color.soft }]} onPress={() => navigation.navigate('Camera', { initialFacing: 'front' })}><Ionicons name="camera-reverse-outline" size={19} color={colors.ink} /></Pressable>
         </View>
 
         {mode === null ? (
